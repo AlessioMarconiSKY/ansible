@@ -1,0 +1,62 @@
+---
+- name: Playbook for installation of nessus agent
+  hosts: "{{ hostlist }}"
+  gather_facts: true
+  vars:
+        - local_folder: "/adm.root/alessio/scripts/personal_ansible/nessus_agent"
+        - agent_version: "{{ '10.6.4' if ansible_facts['distribution_major_version'] == '6' else '10.7.3' }}"
+  pre_tasks:
+        - name: Check prerequisites
+          debug:
+                msg: "Nproc available: {{ ansible_processor_cores }}"
+          failed_when: ansible_processor_cores < 2
+
+        - name: Check RAM prerequisites
+          debug:
+                msg: "RAM available: {{ ansible_memory_mb['real']['total'] }} MB"
+          failed_when: ansible_memory_mb['real']['total'] < 1024
+
+        - name: Check OS version
+          debug:
+                msg: "OS major version: {{ ansible_distribution_major_version }}"
+          failed_when: ansible_facts['distribution_major_version'] | int < 6
+
+        - name: Check connectivity
+          debug:
+                msg: "Qui va controllata la connessione a cloud.tenable.com:443 o prdmilasvlnprx01.sky.local:443..."
+
+        - name: Upload rpm package in /tmp folder
+          copy:
+                src: "{{ local_folder }}/NessusAgent-{{ agent_version }}-el{{ ansible_distribution_major_version }}.x86_64.rpm"
+                dest: /tmp/
+
+        - name: Install rpm
+          yum:
+                name: "/tmp/NessusAgent-{{ agent_version }}-el{{ ansible_distribution_major_version }}.x86_64.rpm"
+                state: present
+
+        - name: Start and enable nessusagent service
+          service:
+                name: nessusagent
+                state: started
+                enabled: yes
+
+        - name: Commands to customize nessus installation
+          command: "{{ item }}"
+          with_items:
+                - "/opt/nessus_agent/sbin/nessuscli fix --set maximum_scans_per_day=1"
+                - "/opt/nessus_agent/sbin/nessuscli fix --set ssl_cipher_list=modern"
+                - "/opt/nessus_agent/sbin/nessuscli fix --set plugin_load_performance_mode=low"
+                - "/opt/nessus_agent/sbin/nessuscli fix --set scan_performance_mode=low"
+                - "/opt/nessus_agent/sbin/nessuscli fix --set update_hostname=yes"
+                - "/opt/nessus_agent/sbin/nessuscli fix --set max_retries=10"
+
+        - name: Restart service nessusagent
+          service:
+                name: nessusagent
+                state: restarted
+
+        - name: Remove rpm file from tpm folder
+          file:
+                path: "/tmp/NessusAgent-{{ agent_version }}-el{{ ansible_distribution_major_version }}.x86_64.rpm"
+                state: absent
